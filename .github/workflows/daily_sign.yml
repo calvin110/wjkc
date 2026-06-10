@@ -1,0 +1,30 @@
+name: Daily Sign-In
+
+on:
+  schedule:
+    # 北京时间每天 09:00 = UTC 01:00 (UTC+8)
+    - cron: '0 1 * * *'
+  workflow_dispatch:  # 支持手动触发
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily sign-in
+        env:
+          EMAIL: ${{ secrets.WJKC_EMAIL }}
+          PASSWORD: ${{ secrets.WJKC_PASSWORD }}
+        run: python wjkc_login.py --quiet
