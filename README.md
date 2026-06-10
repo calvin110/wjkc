@@ -1,10 +1,10 @@
-﻿# 网际快车 (wjkc) 自动签到
+# 网际快车 (wjkc) 自动签到
 
 从入口网站自动获取国内访问链接，使用账号密码登录，每日签到领取流量奖励。
 
 ## 快速开始
 
-`ash
+```bash
 # 安装依赖
 pip install -r requirements.txt
 
@@ -13,26 +13,26 @@ python wjkc_login.py your_email@example.com your_password
 
 # 静默模式（适合定时任务）
 python wjkc_login.py your_email@example.com your_password --quiet
-`
+```
 
 也可通过环境变量传入凭据：
 
-`ash
+```bash
 EMAIL=user@example.com PASSWORD=abc123 python wjkc_login.py
-`
+```
 
 ## 定时自动签到（GitHub Actions）
 
 ### 1. 推送代码到 GitHub
 
-`ash
+```bash
 git init
 git add .
 git commit -m "add wjkc auto sign-in"
 git remote add origin https://github.com/你的用户名/wjkc-sign.git
 git branch -M main
 git push -u origin main
-`
+```
 
 ### 2. 配置 Secrets
 
@@ -40,8 +40,8 @@ git push -u origin main
 
 | Name | Value |
 |------|-------|
-| \WJKC_EMAIL\ | 你的登录邮箱 |
-| \WJKC_PASSWORD\ | 你的登录密码 |
+| `WJKC_EMAIL` | 你的登录邮箱 |
+| `WJKC_PASSWORD` | 你的登录密码 |
 
 ### 3. 启用 Actions
 
@@ -68,10 +68,10 @@ git push -u origin main
 
 | 接口 | 说明 |
 |------|------|
-| \POST /api/host/get\ | 获取国内访问域名 |
-| \POST /api/user/login\ | 登录（email + md5 密码） |
-| \POST /api/user/sign_use\ | 每日签到 |
-| \POST /api/user/sign_use_info\ | 签到奖励规则 |
-| \POST /api/user/sign_use_records\ | 签到记录（限 200 条） |
+| `POST /api/host/get` | 获取国内访问域名 |
+| `POST /api/user/login` | 登录（email + md5 密码） |
+| `POST /api/user/sign_use` | 每日签到 |
+| `POST /api/user/sign_use_info` | 签到奖励规则 |
+| `POST /api/user/sign_use_records` | 签到记录（限 200 条） |
 
 请求/响应均使用 base64 编码的 JSON 包裹。
