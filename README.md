@@ -1,6 +1,6 @@
 # 网际快车 (wjkc) 自动签到
 
-从入口网站自动获取国内访问链接，使用账号密码登录，每日签到领取流量奖励。
+从入口网站自动获取国内访问链接，使用账号密码登录，每日签到领取流量奖励，推送钉钉通知。
 
 ## 快速开始
 
@@ -21,6 +21,20 @@ python wjkc_login.py your_email@example.com your_password --quiet
 EMAIL=user@example.com PASSWORD=abc123 python wjkc_login.py
 ```
 
+## 钉钉通知
+
+配置钉钉机器人 Webhook 后，签到结果会自动推送到钉钉群：
+
+```bash
+# 命令行指定 Webhook
+python wjkc_login.py user@example.com password --webhook https://oapi.dingtalk.com/robot/send?access_token=xxx
+
+# 或通过环境变量
+DINGTALK_WEBHOOK=https://oapi.dingtalk.com/robot/send?access_token=xxx python wjkc_login.py
+```
+
+钉钉机器人安全设置建议关闭 **IP 地址白名单**，或添加 GitHub Actions 的 IP 范围。
+
 ## 定时自动签到（GitHub Actions）
 
 ### 1. 推送代码到 GitHub
@@ -36,25 +50,26 @@ git push -u origin main
 
 ### 2. 配置 Secrets
 
-在 GitHub 仓库页面进入 **Settings → Secrets and variables → Actions**，添加两个 Repository secrets：
+在 GitHub 仓库页面进入 **Settings → Secrets and variables → Actions**，添加三个 Repository secrets：
 
 | Name | Value |
 |------|-------|
 | `WJKC_EMAIL` | 你的登录邮箱 |
 | `WJKC_PASSWORD` | 你的登录密码 |
+| `DINGTALK_WEBHOOK` | 钉钉机器人 Webhook URL |
 
 ### 3. 启用 Actions
 
 推送后 GitHub Actions 会自动按以下时间触发：
 
-- **每天北京时间 09:00**（UTC 01:00）自动签到
+- **每天北京时间 09:00**（UTC 01:00）自动签到并推送钉钉通知
 - 可在 Actions 页面手动触发（**Run workflow**）
 
 ### 4. 查看结果
 
 每次运行后，在 Actions 页面可以查看签到日志：
 
-- ✅ 签到成功，显示获得流量和连续天数
+- ✅ 签到成功，钉钉群收到通知
 - ⚠️ 今日已签到（不会报错）
 - ❌ 签到失败，可查看错误详情
 
@@ -67,7 +82,7 @@ git push -u origin main
 脚本基于前端 SPA 逆向分析，使用以下接口：
 
 | 接口 | 说明 |
-|------|------|
+|------|-------|
 | `POST /api/host/get` | 获取国内访问域名 |
 | `POST /api/user/login` | 登录（email + md5 密码） |
 | `POST /api/user/sign_use` | 每日签到 |

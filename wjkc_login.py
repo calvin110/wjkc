@@ -1,11 +1,26 @@
-﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-网际快车 (wjkc) 自动登录 & 签到脚本
+网际快车 (wjkc) 自动签到 & 钉钉通知脚本
 
-支持 GitHub Actions 定时运行:
-  - 从环境变量 EMAIL / PASSWORD 读取凭据
-  - --quiet 模式精简输出，适合 CI 日志
+功能:
+  1. 自动获取国内访问链接 → 登录 → 签到
+  2. 签到成功后通过钉钉机器人发送 Markdown 通知
+  3. 支持 GitHub Actions 定时运行
+
+环境变量:
+  EMAIL             登录邮箱
+  PASSWORD          登录密码
+  DINGTALK_WEBHOOK  钉钉机器人 Webhook URL（可选）
+
+API 规约（逆向自前端 SPA）:
+  - 请求体: {"data": base64(JSON.stringify(params))}
+  - 密码: MD5(原始密码)
+  - 响应体: JSON.parse(atob(data_str))，支持 URL-safe base64
+  - 认证: Cookie (name="token") 由服务端 Set-Cookie 下发
+
+签到规则:
+  - 每日基础奖励 200 MB
+  - 每连续签到 30 天，周期额外奖励 8192 MB (8 GB)
 """
 
 import sys
@@ -14,6 +29,7 @@ import base64
 import hashlib
 import argparse
 import os
+from datetime import datetime
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -46,6 +62,84 @@ def fmt_bytes(n: float) -> str:
             return f"{n:.2f} {unit}"
         n /= 1024
     return f"{n:.2f} PB"
+
+
+# -- 钉钉通知 ----------------------------------------------------------
+
+def send_dingtalk(text: str, title: str = "网际快车签到通知",
+                  webhook: str | None = None) -> bool:
+    """
+    通过钉钉自定义机器人发送 Markdown 消息。
+    webhook 优先级: 参数 > DINGTALK_WEBHOOK 环境变量 > 不发送
+    """
+    url = webhook or os.environ.get("DINGTALK_WEBHOOK")
+    if not url:
+        return False
+    try:
+        import requests
+        payload = {
+            "msgtype": "markdown",
+            "markdown": {"title": title, "text": text},
+        }
+        resp = requests.post(url, json=payload, timeout=10)
+        resp.raise_for_status()
+        body = resp.json()
+        if body.get("errcode") == 0:
+            print("  [钉钉] 通知发送成功")
+        else:
+            print(f"  [钉钉] 发送失败: {body.get('errmsg', '')}")
+        return body.get("errcode") == 0
+    except Exception as e:
+        print(f"  [钉钉] 发送异常: {e}")
+        return False
+
+
+def build_sign_notification(result: dict | None, info: dict | None) -> str | None:
+    """构造签到结果的 DingTalk Markdown 文本。info 为 None 时返回 None。"""
+    if not info:
+        return None
+
+    lines = []
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    lines.append(f"# 网际快车签到 {date_str}")
+    lines.append("")
+    lines.append(f"- **账号**: {info.get('email', '?')}")
+    lines.append(f"- **连续签到**: {info.get('haveContinueSignUseData', 0)} 天")
+
+    signed = info.get("signUseToday", False) or (result is not None)
+    if info.get("paidUser") is not True:
+        lines.append("- **结果**: 仅付费用户可签到，跳过")
+    elif signed:
+        lines.append("- **结果**: 签到成功" if result else "- **结果**: 今日已签到")
+    else:
+        lines.append("- **结果**: 签到失败")
+
+    # 流量卡片
+    summary = info.get("subSummary", {})
+    perm = summary.get("permanent", {})
+    if perm.get("active"):
+        used = perm.get("usedBytes", 0)
+        total = perm.get("quotaBytes", 0)
+        remain = perm.get("remainingBytes", 0)
+        pct = used / total * 100 if total else 0
+        bar_len = 10
+        filled = int(bar_len * pct / 100)
+        bar = "█" * filled + "▁" * (bar_len - filled)
+        lines.append("")
+        lines.append(f"**流量使用**  {fmt_bytes(used)} / {fmt_bytes(total)}")
+        lines.append(f"> `{bar}`  {pct:.1f}%")
+
+    if result:
+        add_mb = result.get("addTraffic", 0) / 1024 / 1024
+        lines.append("")
+        lines.append(f"**本次获得**: {add_mb:.0f} MB")
+        if result.get("extraReward"):
+            lines.append("**周期额外奖励**: 获得!")
+
+    lines.append("")
+    lines.append(f"> 自动签到 | {datetime.now().strftime('%H:%M')}")
+
+    return "\n".join(lines)
 
 
 # -- 客户端 ------------------------------------------------------------
@@ -110,11 +204,11 @@ class WJKCClient:
         decoded = decode_response(resp.json()["data"])
         token = resp.headers.get("Set-Cookie", "")
         if token:
-            print(f"  OK  获取 Token")
+            print("  OK  获取 Token")
         if decoded.get("code") != 0:
             print(f"  X   登录失败: {decoded.get('msg', '')}")
             return False
-        print(f"  OK  登录成功")
+        print("  OK  登录成功")
         return True
 
     def get_userinfo(self) -> dict | None:
@@ -136,56 +230,19 @@ class WJKCClient:
         return None
 
 
-# -- 签到结果输出 ------------------------------------------------------
-
-def report_sign(result: dict | None, info: dict | None, quiet: bool):
-    if not info:
-        print("[!] 无法获取用户信息，跳过签到")
-        return
-
-    if info.get("paidUser") is not True:
-        print("[X] 仅付费用户可签到")
-        return
-
-    if info.get("signUseToday", False):
-        days = info.get("haveContinueSignUseData", 0)
-        print(f"[S] 今日已签到 (连续 {days} 天)")
-        return
-
-    if not result:
-        print("[X] 签到失败")
-        return
-
-    add_bytes = result.get("addTraffic", 0)
-    add_mb = add_bytes / 1024 / 1024
-    days = result.get("haveContinueSignUseData", 0)
-    extra = result.get("extraReward", False)
-
-    print(f"[S] 签到成功! +{add_mb:.0f} MB, 连续 {days} 天" +
-          (", 周期额外奖励!" if extra else ""))
-
-    if not quiet:
-        sign_info = client.get_sign_info()
-        if sign_info:
-            daily = sign_info.get("signUseRewardTraffic", 0)
-            cycle = sign_info.get("continueSignUseDay", 0)
-            bonus = sign_info.get("continueSignReward", 0)
-            print(f"  - 每日基础: {daily} MB")
-            if cycle and bonus:
-                print(f"  - 每 {cycle} 天周期: +{bonus} MB ({fmt_bytes(bonus*1024*1024)})")
-
-
 # -- CLI --------------------------------------------------------------
 
 def build_parser():
     p = argparse.ArgumentParser(
-        description="网际快车 (wjkc) 自动登录 & 签到")
+        description="网际快车 (wjkc) 自动签到 & 钉钉通知")
     p.add_argument("email", nargs="?", default=None,
                    help="登录邮箱（默认读取 EMAIL 环境变量）")
     p.add_argument("password", nargs="?", default=None,
                    help="登录密码（默认读取 PASSWORD 环境变量）")
     p.add_argument("--quiet", action="store_true",
                    help="精简输出（适合 CI）")
+    p.add_argument("--webhook", default=None,
+                   help="钉钉机器人 Webhook URL（默认读取 DINGTALK_WEBHOOK 环境变量）")
     return p
 
 
@@ -217,17 +274,36 @@ def main():
 
         info = client.get_userinfo()
         result = client.sign_in()
-        report_sign(result, info, quiet)
+
+        # -- 控制台输出 ------------------------------------------------
+        if not info:
+            print("[!] 无法获取用户信息，跳过签到")
+        elif info.get("paidUser") is not True:
+            print("[X] 仅付费用户可签到")
+        elif info.get("signUseToday", False):
+            print(f"[S] 今日已签到 (连续 {info.get('haveContinueSignUseData', 0)} 天)")
+        elif result:
+            add_mb = result.get("addTraffic", 0) / 1024 / 1024
+            days = result.get("haveContinueSignUseData", 0)
+            extra = result.get("extraReward", False)
+            print(f"[S] 签到成功! +{add_mb:.0f} MB, 连续 {days} 天" +
+                  (", 周期额外奖励!" if extra else ""))
+        else:
+            print("[X] 签到失败")
 
         if not quiet:
             print("=" * 48)
+
+        # -- 钉钉通知 --------------------------------------------------
+        text = build_sign_notification(result, info)
+        if text:
+            send_dingtalk(text, webhook=args.webhook)
 
         # 已签到不算失败
         if info and info.get("signUseToday", False):
             sys.exit(0)
         if result:
             sys.exit(0)
-        # 签到失败（非已签到情况）退出码 1
         sys.exit(1)
 
     except KeyboardInterrupt:

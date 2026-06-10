@@ -29,4 +29,5 @@ jobs:
         env:
           EMAIL: ${{ secrets.WJKC_EMAIL }}
           PASSWORD: ${{ secrets.WJKC_PASSWORD }}
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
         run: python wjkc_login.py --quiet
