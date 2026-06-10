@@ -66,7 +66,7 @@ def fmt_bytes(n: float) -> str:
 
 # -- 钉钉通知 ----------------------------------------------------------
 
-def send_dingtalk(text: str, title: str = "网际快车签到通知",
+def send_dingtalk(text,
                   webhook: str | None = None) -> bool:
     """
     通过钉钉自定义机器人发送 Markdown 消息。
@@ -79,7 +79,7 @@ def send_dingtalk(text: str, title: str = "网际快车签到通知",
         import requests
         payload = {
             "msgtype": "markdown",
-            "markdown": {"title": title, "text": text},
+            "markdown": {"title": text.split(chr(10))[0] if text else "网际快车签到通知", "text": text},
         }
         resp = requests.post(url, json=payload, timeout=10)
         resp.raise_for_status()
@@ -94,51 +94,26 @@ def send_dingtalk(text: str, title: str = "网际快车签到通知",
         return False
 
 
-def build_sign_notification(result: dict | None, info: dict | None) -> str | None:
-    """构造签到结果的 DingTalk Markdown 文本。info 为 None 时返回 None。"""
+def build_sign_notification(result, info, access_url):
     if not info:
         return None
-
     lines = []
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    lines.append(f"# 网际快车签到 {date_str}")
-    lines.append("")
-    lines.append(f"- **账号**: {info.get('email', '?')}")
-    lines.append(f"- **连续签到**: {info.get('haveContinueSignUseData', 0)} 天")
-
-    signed = info.get("signUseToday", False) or (result is not None)
-    if info.get("paidUser") is not True:
-        lines.append("- **结果**: 仅付费用户可签到，跳过")
-    elif signed:
-        lines.append("- **结果**: 签到成功" if result else "- **结果**: 今日已签到")
-    else:
-        lines.append("- **结果**: 签到失败")
-
-    # 流量卡片
-    summary = info.get("subSummary", {})
-    perm = summary.get("permanent", {})
-    if perm.get("active"):
-        used = perm.get("usedBytes", 0)
-        total = perm.get("quotaBytes", 0)
-        remain = perm.get("remainingBytes", 0)
-        pct = used / total * 100 if total else 0
-        bar_len = 10
-        filled = int(bar_len * pct / 100)
-        bar = "█" * filled + "▁" * (bar_len - filled)
-        lines.append("")
-        lines.append(f"**流量使用**  {fmt_bytes(used)} / {fmt_bytes(total)}")
-        lines.append(f"> `{bar}`  {pct:.1f}%")
-
-    if result:
+    lines.append("网际快车-签到成功")
+    lines.append("---------------------------------")
+    lines.append(f"域名： [{access_url}]({access_url})")
+    lines.append(f"账号： {info.get('email', '?')}")
+    if info.get("signUseToday", False) and not result:
+        lines.append("获得流量： 今日已签到, 无")
+    elif result:
         add_mb = result.get("addTraffic", 0) / 1024 / 1024
-        lines.append("")
-        lines.append(f"**本次获得**: {add_mb:.0f} MB")
-        if result.get("extraReward"):
-            lines.append("**周期额外奖励**: 获得!")
-
-    lines.append("")
-    lines.append(f"> 自动签到 | {datetime.now().strftime('%H:%M')}")
-
+        lines.append(f"获得流量： {add_mb:.2f} MB")
+    else:
+        lines.append("获得流量： 签到失败")
+    lines.append(f"连续签到： {info.get('haveContinueSignUseData', 0)} 天")
+    if result and result.get("extraReward"):
+        lines.append("额外奖励： 有")
+    else:
+        lines.append("额外奖励： 无")
     return "\n".join(lines)
 
 
@@ -295,7 +270,7 @@ def main():
             print("=" * 48)
 
         # -- 钉钉通知 --------------------------------------------------
-        text = build_sign_notification(result, info)
+        text = build_sign_notification(result, info, client.access_url)
         if text:
             send_dingtalk(text, webhook=args.webhook)
 
