@@ -98,26 +98,24 @@ def build_sign_notification(result, info, access_url):
     if not info:
         return None
     lines = []
-    lines.append("网际快车-签到成功")
-    lines.append("---------------------------------")
-    lines.append(f"域名： [{access_url}]({access_url})")
-    lines.append(f"账号： {info.get('email', '?')}")
+    lines.append("网际快车-签到成功  ")
+    lines.append("─────────────────────────────────  ")
+    lines.append(f"域名： [{access_url}]({access_url})  ")
+    lines.append(f"账号： {info.get('email', '?')}  ")
     if info.get("signUseToday", False) and not result:
-        lines.append("获得流量： 今日已签到, 无")
+        lines.append("获得流量： 今日已签到, 无  ")
     elif result:
         add_mb = result.get("addTraffic", 0) / 1024 / 1024
-        lines.append(f"获得流量： {add_mb:.2f} MB")
+        lines.append(f"获得流量： {add_mb:.2f} MB  ")
     else:
-        lines.append("获得流量： 签到失败")
-    lines.append(f"连续签到： {info.get('haveContinueSignUseData', 0)} 天")
+        lines.append("获得流量： 签到失败  ")
+    lines.append(f"连续签到： {info.get('haveContinueSignUseData', 0)} 天  ")
     if result and result.get("extraReward"):
-        lines.append("额外奖励： 有")
+        lines.append("额外奖励： 有  ")
     else:
-        lines.append("额外奖励： 无")
+        lines.append("额外奖励： 无  ")
     return "\n".join(lines)
 
-
-# -- 客户端 ------------------------------------------------------------
 
 class WJKCClient:
     LANDING = "https://xn--66tw07h.com"
